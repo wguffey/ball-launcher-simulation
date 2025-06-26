@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Ball Launcher Simulator</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js">
+    </script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Ball Launch Simulator</h1>
+            <section class="box">
+                <h2>How this app works</h2>
+                <p>
+                    This simulator models a rotating arm that launches a ball. You can control the inputs
+                    directly or solve for the inputs needed to achieve a desired flight distance.
+                </p>
+                <ol style="text-align:left;">
+                    <li>
+                        <strong>Simulate ball launch:</strong> Enter motor torque, angles, max omega, and geometry.
+                        Click “Run Experiment” to see flight distance, flight time, etc.
+                    </li>
+                    <li>
+                        <strong>Solve for inputs:</strong> Provide a target distance, release angle, spin-up time,
+                        and geometry. The required torque and max omega are computed automatically and
+                        used to run a simulation.
+                    </li>
+                    <li>
+                        <strong>Change launcher geometry:</strong> You can change some aspects of the ball laucher geometry.
+                    </li>
+                </ol>
+                <p>Each run adds a new row to the Results table for easy comparison.</p>
+            </section>
+        </header>
+
+        <div class="bento-row">
+            <section class="box">
+                <h2>Direct Control</h2>
+                <div style="text-align:left;">
+                    <div class="input-row">
+                        <label class="input-label" for="motorTorqueInput">Motor Torque (Nm):</label>
+                        <input type="number" id="motorTorqueInput" value="0.1" step="0.01">
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label" for="startAngleInput">Start Angle (deg):</label>
+                        <input type="number" id="startAngleInput" value="0" step="1">
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label" for="releaseAngleInput">Release Angle (deg):</label>
+                        <input type="number" id="releaseAngleInput" value="45" step="1">
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label" for="maxOmegaInput">Max Omega (rad/s):</label>
+                        <input type="number" id="maxOmegaInput" value="20" step="1">
+                    </div>
+                    <button onclick="simulateLaunch()">Run Experiment</button>
+                </div>
+            </section>
+
+            <section class="box">
+                <h2>Inverse Control</h2>
+                <div style="text-align:left;">
+                    <div class="input-row">
+                        <label class="input-label" for="desiredDistanceInput">Desired Distance (m):</label>
+                        <input type="number" id="desiredDistanceInput" value="5" step="0.1">
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label" for="desiredAngleInput">Release Angle (deg):</label>
+                        <input type="number" id="desiredAngleInput" value="45" step="1">
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label" for="spinUpTimeInput">Spin-Up Time (s):</label>
+                        <input type="number" id="spinUpTimeInput" value="1" step="0.1">
+                    </div>
+                    <button onclick="findParameters()">Find Parameters</button>
+                </div>
+            </section>
+        </div>
+
+        <section class="box" style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1; margin-right: 20px;">
+                <h2>Ball Launcher Geometry</h2>
+                <div style="text-align:left;">
+                    <div class="input-row">
+                        <label class="input-label" for="armLengthInput">Arm Length (m):</label>
+                        <input type="number" id="armLengthInput" value="0.20" step="0.01">
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label" for="armRadiusInput">Arm Radius (m):</label>
+                        <input type="number" id="armRadiusInput" value="0.0075" step="0.0001">
+                    </div>
+                    <div class="input-row">
+                        <label class="input-label" for="ballRadiusInput">Ball Radius (m):</label>
+                        <input type="number" id="ballRadiusInput" value="0.0075" step="0.0001">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 20px;">
+                <img src="images/launcher_render.png" alt="Launcher Render"
+                    style="width: 200px; height: auto; object-fit: contain;" />
+                <img src="images/launcher_spec.png" alt="Launcher Specification"
+                    style="width: 200px; height: auto; object-fit: contain;" />
+            </div>
+        </section>
+
+        <section class="box">
+            <h2>Results</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Motor Torque (Nm)</th>
+                        <th>Start Angle (deg)</th>
+                        <th>Release Angle (deg)</th>
+                        <th>Max Angular Velocity (rad/s)</th>
+                        <th>Launch Vel X (m/s)</th>
+                        <th>Launch Vel Y (m/s)</th>
+                        <th>Flight Distance (m)</th>
+                        <th>Flight Time (s)</th>
+                        <th>Time to Max Speed (s)</th>
+                        <th>Arm Length (m)</th>
+                        <th>Arm Radius (m)</th>
+                        <th>Ball Radius (m)</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsTableBody"></tbody>
+            </table>
+        </section>
+    </div>
+
+    <script>
+        async function findParameters() {
+            const distanceVal = parseFloat(document.getElementById("desiredDistanceInput").value);
+            const angleVal = parseFloat(document.getElementById("desiredAngleInput").value);
+            const spinUpTimeVal = parseFloat(document.getElementById("spinUpTimeInput").value);
+
+            // Read geometry from the geometry box
+            const armLength = parseFloat(document.getElementById("armLengthInput").value);
+            const armRadius = parseFloat(document.getElementById("armRadiusInput").value);
+            const ballRadius = parseFloat(document.getElementById("ballRadiusInput").value);
+
+            if (isNaN(distanceVal) || distanceVal <= 0) {
+                alert("Please enter a valid positive distance.");
+                return;
+            }
+            if (spinUpTimeVal <= 0) {
+                alert("Please enter a positive spin-up time.");
+                return;
+            }
+            if (armLength <= 0 || armRadius <= 0 || ballRadius <= 0) {
+                alert("Please enter positive geometry values.");
+                return;
+            }
+
+            const payload = {
+                distance: distanceVal,
+                angle_deg: angleVal,
+                spin_up_time: spinUpTimeVal,
+                arm_length: armLength,
+                arm_radius: armRadius,
+                ball_radius: ballRadius
+            };
+
+            try {
+                const response = await fetch("http://localhost:8000/solve_for_inputs", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    alert("Error: " + (data.error || "unknown"));
+                    return;
+                }
+
+                // Update the direct control fields with the results
+                document.getElementById("motorTorqueInput").value = data.motor_torque.toFixed(3);
+                document.getElementById("releaseAngleInput").value = data.release_angle_deg.toFixed(1);
+                document.getElementById("maxOmegaInput").value = data.max_omega.toFixed(3);
+
+                // Run a simulation using these parameters (and current geometry)
+                simulateLaunch();
+            } catch (err) {
+                console.error("Error calling /solve_for_inputs:", err);
+                alert("Server error or cannot connect.");
+            }
+        }
+
+        async function simulateLaunch() {
+            // Read from both the direct control and geometry boxes
+            const motorTorque = parseFloat(document.getElementById("motorTorqueInput").value);
+            const startAngle = parseFloat(document.getElementById("startAngleInput").value);
+            const releaseAngle = parseFloat(document.getElementById("releaseAngleInput").value);
+            const maxOmega = parseFloat(document.getElementById("maxOmegaInput").value);
+
+            const armLength = parseFloat(document.getElementById("armLengthInput").value);
+            const armRadius = parseFloat(document.getElementById("armRadiusInput").value);
+            const ballRadius = parseFloat(document.getElementById("ballRadiusInput").value);
+
+            if (
+                armLength <= 0 ||
+                armRadius <= 0 ||
+                ballRadius <= 0 ||
+                isNaN(motorTorque) ||
+                isNaN(startAngle) ||
+                isNaN(releaseAngle) ||
+                isNaN(maxOmega)
+            ) {
+                alert("Please enter valid numeric values in all fields.");
+                return;
+            }
+
+            const payload = {
+                motor_torque: motorTorque,
+                start_angle: startAngle,
+                release_angle: releaseAngle,
+                max_omega: maxOmega,
+                arm_length: armLength,
+                arm_radius: armRadius,
+                ball_radius: ballRadius
+            };
+
+            try {
+                const response = await fetch("http://localhost:8000/simulate_launch", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    alert("Error: Simulation failed.");
+                    return;
+                }
+
+                // Create a new row in the results table
+                const tbody = document.getElementById("resultsTableBody");
+                const row = document.createElement("tr");
+                row.innerHTML = `
+          <td>${motorTorque.toFixed(3)}</td>
+          <td>${startAngle.toFixed(2)}</td>
+          <td>${releaseAngle.toFixed(2)}</td>
+          <td>${maxOmega.toFixed(2)}</td>
+          <td>${(data.launch_vel_x ?? 0).toFixed(3)}</td>
+          <td>${(data.launch_vel_y ?? 0).toFixed(3)}</td>
+          <td>${(data.max_distance ?? 0).toFixed(3)}</td>
+          <td>${(data.flight_time ?? 0).toFixed(3)}</td>
+          <td>${(data.spin_up_time ?? 0).toFixed(3)}</td>
+          <td>${(data.arm_length ?? 0).toFixed(3)}</td>
+          <td>${(data.arm_radius ?? 0).toFixed(4)}</td>
+          <td>${(data.ball_radius ?? 0).toFixed(4)}</td>
+        `;
+                tbody.appendChild(row);
+            } catch (err) {
+                console.error("Error calling /simulate_launch:", err);
+                alert("Server error or cannot connect.");
+            }
+        }
+    </script>
+</body>
+
+</html>
